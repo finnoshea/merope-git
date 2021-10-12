@@ -1,3 +1,3 @@
 Anomaly Detection for scientific data.
 
-Cross project support.
+Cross project support, hopefully.
