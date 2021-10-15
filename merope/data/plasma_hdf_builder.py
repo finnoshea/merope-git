@@ -6,6 +6,9 @@ import numpy as np
 import pickle
 import h5py
 
+path = '/gpfs/slac/staas/fs1/g/coffee_group/edgeml_fes_data/ecebes'
+shot = 180625
+
 
 class HDFMaker:
     """
@@ -108,6 +111,41 @@ class HDFMaker:
         except FileNotFoundError:
             return None
 
+    @staticmethod
+    def addCommonIndexes(hdf):
+        """
+        Compares the two time vectors in the hdf and labels them with the
+        start and end indexes for which their times overlap.
+
+        Parameters
+        ----------
+        hdf : h5py file
+            An open h5py file pointer.
+
+        Returns
+        -------
+        Nothing.  The HDF is modified in place.
+        """
+        t_starts = []
+        t_ends = []
+        for value in hdf.values():
+            t = value['time']
+            t_starts.append(np.min(t))
+            t_ends.append(np.max(t))
+
+        t0 = np.max(t_starts)  # latest start time
+        t1 = np.min(t_ends)  # earliest end time
+        if t0 > t1:  # no overlapping times
+            t1 = -1
+        for grp in hdf.values():
+            t = grp['time'][()]
+            if t1 > 0:
+                ids = np.where((t >= t0) * (t <= t1))[0]  # why create array?
+            else:
+                ids = [0, 0]
+            grp.attrs['coincident_indexes'] = (ids[0], ids[-1])
+        return
+
     def convertFiles(self, target):
         """
         Parses the files found in self.files and stores them as a joint HDF5.
@@ -117,10 +155,25 @@ class HDFMaker:
         target : str
             Full path and filename for HDF5 file to be created.
         """
-        data = {}
-        for key, path in self.files.items():
-            data[key] = self.openFile(path)
-
         with h5py.File(target, 'w') as hdf:
-            pass
+            for key, path in self.files.items():  # open ECE and BES files
+                data = self.openFile(path)
+                grp = hdf.create_group(key)
+                pickup = list(data.keys())[0]
+                times = (data[pickup]['data.time']+0.00025).astype(int)
+                grp.create_dataset('time',
+                                   data=times,
+                                   dtype=np.int16)
+                for k, v in data.items():
+                    data_key = 'data.{:s}'.format(key)
+                    if k[:3].lower() == key.lower():  # skip the loc data
+                        grp.create_dataset(k[-2:],
+                                           data=v[data_key],
+                                           dtype=np.float32)
+
+            # include metadata
+            hdf.attrs['shot'] = self.shot_number
+            self.addCommonIndexes(hdf)
+
+
         

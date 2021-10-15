@@ -84,7 +84,7 @@ def similarity(a, b):
         return 0  # they are the same
     if mag_a == 0 or mag_b == 0:
         return 1  # maximally dissimilar
-    return np.abs(np.real(hermitianInner(a, b)) / (mag_a * mag_b) - 1) / 2
+    return np.real(hermitianInner(a, b)) / (mag_a * mag_b)
 
 
 def creditAssignment(m):
@@ -180,7 +180,8 @@ def FourierSimilarity(timeseries, m=10):
         x = np.copy(timeseries[idx-m:idx])
         x -= np.mean(x)
         X = np.matmul(U, x)                 # step 1 - DFT
-        nu = similarity(X, V)               # step 2 - compute similarity
+        nu = similarity(X, V)               # step 2a - compute similarity
+        nu = np.abs(nu - 1) / 2             # step 2b - compute dissimilarity
         C = X - V
         norm = linalg.norm(C)
         if norm > 0:
@@ -199,6 +200,60 @@ def FourierSimilarity(timeseries, m=10):
         rs[idx - m:idx, idx - 1] = nu * c
 
         idx += 1  # update iterator
+
+    return sn, rs
+
+
+def FourierDelaySimilarity(timeseries, m=10, delay=1):
+    """
+    Fourier Similarity of time series windows.
+
+    Parameters
+    ----------
+    timeseries : ndarray
+        A time series from the FERMI machine.
+    m : int
+        The size of the window defined in the MSR algorithm.
+    delay : int
+        How far behind the vector V is from vector X
+
+    Returns
+    -------
+    1D ndarray of similarity coefficients.
+    """
+    lam = 0.0  # memory parameter - hard code in
+    U = linalg.dft(m)
+    invU = linalg.inv(U)
+
+    sn = np.zeros(len(timeseries), dtype=float)  # Sn vector
+    rs = np.zeros((len(timeseries), len(timeseries)), dtype=float)
+    #V = np.zeros(m, dtype=complex)  # history vector
+
+    # cheat on the first m + delay
+    V = np.copy(timeseries[:m])
+
+    idx = m + delay
+
+    while idx <= len(timeseries):
+        x = np.copy(timeseries[idx-m:idx])
+        x -= np.mean(x)
+        X = np.matmul(U, x)                 # step 1 - DFT
+        nu = similarity(X, V)               # step 2a - compute similarity
+        nu = np.abs(nu - 1) / 2             # step 2b - compute dissimilarity
+        C = X - V
+        norm = linalg.norm(C)
+        if norm > 0:
+            C /= norm
+        c = np.abs(np.matmul(invU, C))
+        sn[idx - m:idx] += nu * c
+        rs[idx - m:idx, idx - 1] = nu * c
+
+        idx += 1  # update iterator
+
+        v = np.copy(
+            timeseries[idx - m - delay:idx - delay])  # step 2b - new V
+        v -= np.mean(v)
+        V = np.matmul(U, v)
 
     return sn, rs
 
@@ -239,7 +294,8 @@ def FourierSimilarity2(timeseries, m=10):
         x -= np.mean(x)
         X = np.matmul(U, x)                 # step 1 - DFT
         nu = similarity(np.abs(X),
-                        np.abs(V))          # step 2 - compute similarity
+                        np.abs(V))          # step 2a - compute similarity
+        nu = np.abs(nu - 1) / 2             # step 2b - compute dissimilarity
         C = X - V
         V *= lam                            # step 3a - forget old Xs
         V += X                              # step 3b - remember new X
@@ -288,7 +344,8 @@ def RealSimilarity(timeseries, m=10):
         norm = linalg.norm(X)
         if norm > 0:
             X /= norm
-        nu = similarity(X, V)               # step 1 - compute similarity
+        nu = similarity(X, V)               # step 1a - compute similarity
+        nu = np.abs(nu - 1) / 2             # step 1b - compute dissimilarity
         C = X - V
         V *= lam                            # step 2a - forget old Xs
         V += X                              # step 2b - remember new X
@@ -299,6 +356,113 @@ def RealSimilarity(timeseries, m=10):
 
     return sn, rs
 
+
+def RealDelaySimilarity(timeseries, m=10, delay=1):
+    """
+    Similarity between vectors in real space with delay.
+
+    Parameters
+    ----------
+    timeseries : ndarray
+        A time series from the FERMI machine.
+    m : int
+        The size of the window defined in the MSR algorithm.
+    delay : int
+        The size of the delay between the current window and the window
+        it is compared with.
+
+    Returns
+    -------
+    1D ndarray of similarity coefficients.
+    """
+    lam = 0.0  # memory parameter - hard code in
+    U = linalg.dft(m)
+    invU = linalg.inv(U)
+
+    sn = np.zeros(len(timeseries), dtype=float)  # Sn vector
+    rs = np.zeros((len(timeseries), len(timeseries)), dtype=float)
+    #V = np.zeros(m, dtype=complex)  # history vector
+
+    # cheat on the first m + delay
+    V = np.copy(timeseries[:m])
+
+    idx = m + delay
+
+    while idx <= len(timeseries):
+        x = np.copy(timeseries[idx-m:idx])
+        X = x - np.mean(x)
+        norm = linalg.norm(X)
+        if norm > 0:
+            X /= norm
+        nu = similarity(X, V)               # step 1a - compute similarity
+        nu = np.abs(nu - 1) / 2             # step 1b - compute dissimilarity
+        C = X - V
+        sn[idx - m:idx] += nu * np.abs(C)
+        rs[idx - m:idx, idx - 1] = nu * np.abs(C)
+
+        idx += 1  # update iterator
+
+        V *= lam  # step 2a - forget old Xs
+        V += np.copy(
+            timeseries[idx - m - delay:idx - delay])  # step 2b - new V
+        V -= np.mean(V)
+        norm_v = linalg.norm(V)
+        if norm_v > 0:
+            V /= norm_v
+
+    return sn, rs
+
+
+def SurpriseSimilarity(timeseries, m=10):
+    """
+    Shannon Surprise Similarity of time series windows.
+
+    Parameters
+    ----------
+    timeseries : ndarray
+        A time series.
+    m : int
+        The size of the window defined in the MSR algorithm.
+
+    Returns
+    -------
+    1D ndarray of similarity coefficients.
+    """
+    lam = 0.0  # memory parameter - hard code in
+    U = linalg.dft(m)
+    invU = linalg.inv(U)
+
+    sn = np.zeros(len(timeseries), dtype=float)  # Sn vector
+    rs = np.zeros((len(timeseries), len(timeseries)), dtype=float)
+    #V = np.zeros(m, dtype=complex)  # history vector
+
+    # cheat on the first m
+    sn[:m-1] = np.zeros(m-1)
+    rs[:m-1, :m-1] = np.zeros((m-1, m-1))
+    V = np.copy(timeseries[:m])
+
+    idx = m
+
+    while idx <= len(timeseries):
+        x = np.copy(timeseries[idx-m:idx])
+        X = x - np.mean(x)
+        norm = linalg.norm(X)
+        if norm > 0:
+            X /= norm
+        nu = (similarity(X, V) + 1) / 2     # step 1a - compute similarity (0<=nu<=1)
+        nu = -1*np.log(nu)                  # step 1b - compute surprise
+        C = X - V
+        norm_c = linalg.norm(C)
+        if norm_c > 0:
+            C /= norm_c
+        V *= lam                            # step 2a - forget old Xs
+        V += X                              # step 2b - remember new X
+        sn[idx - m:idx] += nu * C
+        rs[idx - m:idx, idx - 1] = nu * C
+
+        idx += 1  # update iterator
+
+    return sn, rs
 
 def ShiftSimilarity(timeseries, m=10):
     """
@@ -337,6 +501,7 @@ def ShiftSimilarity(timeseries, m=10):
         if norm > 0:
             X /= norm
         nu = similarity(X, V)               # step 1 - compute similarity
+        nu = np.abs(nu - 1) / 2
         C = X - V
         V *= lam                            # step 2a - forget old Xs
         V += np.hstack((X[1:], X[0]))         # step 2b - remember new X
@@ -406,7 +571,7 @@ def standardNormalNoise(n=20):
     """
     return np.random.standard_normal(n)
 
-def plotAlgo(algo, timeseries, m=10):
+def plotAlgo(algo, timeseries, m=10, *args, **kwargs):
     """
     Makes a useful plot of the
     Parameters
@@ -422,7 +587,7 @@ def plotAlgo(algo, timeseries, m=10):
     -------
     Nothing but a plot.
     """
-    Sn, Rn = algo(timeseries, m)
+    Sn, Rn = algo(timeseries, m, *args, **kwargs)
 
     # start with a square Figure
     fig = plt.figure(figsize=(14, 8))
