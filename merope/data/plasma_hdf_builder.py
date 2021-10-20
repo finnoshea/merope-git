@@ -10,13 +10,13 @@ path = '/gpfs/slac/staas/fs1/g/coffee_group/edgeml_fes_data/ecebes'
 shot = 180625
 
 
-class HDFMaker:
+class PlasmaHDFMaker:
     """
     """
     def __init__(self, directory, shot_number):
         """
         Opens files of the form SHOT###ECE and SHOT###BES and combines them
-        into an HDF5 files.
+        into an HDF5 file with the coincident times defined.
 
         Parameters
         ----------
@@ -51,7 +51,7 @@ class HDFMaker:
     @staticmethod
     def shotCheck(shot_number):
         """
-        Makes sure that shot number is a string.
+        Makes sure that shot number is an integer.
 
         Parameters
         ----------
@@ -60,12 +60,12 @@ class HDFMaker:
 
         Returns
         -------
-        str of the shot number
+        int of the shot number
         """
         if isinstance(shot_number, int):
-            return str(shot_number)
-        elif isinstance(shot_number, str):
             return shot_number
+        elif isinstance(shot_number, str):
+            return int(shot_number)
         raise TypeError('Please pass shot_number as int or str.')
 
     def fileCheck(self, shot_number):
@@ -73,7 +73,7 @@ class HDFMaker:
         Check which files exist for a given shot number.
         Parameters
         ----------
-        shot_number : str
+        shot_number : int
             Shot number to convert to HDF5
 
         Returns
@@ -83,12 +83,12 @@ class HDFMaker:
         dd = {}
         suffixes = ['ECE', 'BES']
         for suffix in suffixes:
-            fn = os.path.join(self.directory, shot_number + suffix)
+            fn = os.path.join(self.directory, str(shot_number) + suffix)
             if os.path.isfile(fn):
                 dd[suffix] = fn
         if len(dd) > 0:
             return dd
-        out = 'Shot number {:s} does not appear to exist.'.format(shot_number)
+        out = 'Shot number {:d} does not appear to exist.'.format(shot_number)
         raise FileNotFoundError(out)
 
     @staticmethod
@@ -115,7 +115,8 @@ class HDFMaker:
     def addCommonIndexes(hdf):
         """
         Compares the two time vectors in the hdf and labels them with the
-        start and end indexes for which their times overlap.
+        start and end indexes for which their times overlap.  Also adds the
+        time step.
 
         Parameters
         ----------
@@ -144,6 +145,8 @@ class HDFMaker:
             else:
                 ids = [0, 0]
             grp.attrs['coincident_indexes'] = (ids[0], ids[-1])
+            grp.attrs['time_step'] = t[1] - t[0]
+            grp.attrs['time_units'] = 'microseconds'
         return
 
     def convertFiles(self, target):
@@ -160,10 +163,11 @@ class HDFMaker:
                 data = self.openFile(path)
                 grp = hdf.create_group(key)
                 pickup = list(data.keys())[0]
-                times = (data[pickup]['data.time']+0.00025).astype(int)
+                # store times as integer number of microseconds
+                times = (1000 * data[pickup]['data.time']).astype(int)
                 grp.create_dataset('time',
                                    data=times,
-                                   dtype=np.int16)
+                                   dtype=np.int32)
                 for k, v in data.items():
                     data_key = 'data.{:s}'.format(key)
                     if k[:3].lower() == key.lower():  # skip the loc data
@@ -172,7 +176,7 @@ class HDFMaker:
                                            dtype=np.float32)
 
             # include metadata
-            hdf.attrs['shot'] = self.shot_number
+            hdf.attrs['shot_number'] = self.shot_number
             self.addCommonIndexes(hdf)
 
 
