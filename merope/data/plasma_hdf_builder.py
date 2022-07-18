@@ -7,7 +7,7 @@ import pickle
 import h5py
 
 path = '/gpfs/slac/staas/fs1/g/coffee_group/edgeml_fes_data/ecebes'
-shot = 180625
+shot = 166578  #180625
 
 
 class PlasmaHDFMaker:

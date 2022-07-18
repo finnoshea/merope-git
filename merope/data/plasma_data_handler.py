@@ -168,9 +168,36 @@ class PlasmaDataHandler:
                     continue
                 yield emit, data, ts
 
+    @staticmethod
+    def scaleMinMax(minimum, maximum, scale):
+        """
+        Rescales minimum and maximum to be scale times smaller.  If minimum is
+        positive it is not changed.  Used for adjusting colormaps.
+
+        Parameters
+        ----------
+        minimum : float
+            The minimum value in the colormap.
+        maximum : float
+            The maximum value in the colormap.
+        scale : float
+            The scale to change to.  (0,1.0]
+
+        Returns
+        -------
+        Two floats, vmin and vmax for matplotlib's imshow
+        """
+        if maximum == minimum:  # all zeros, I guess.
+            return 0, 1  # arbitrary
+        if maximum <= 0 or minimum >= 0:
+            return minimum, scale * maximum
+        # should be max > 0 and min < 0 now
+        return scale * minimum, scale * maximum
+
     def createSpectrogram(self, instrument,
                           channel, window_size,
-                          make_plot=True):
+                          make_plot=True,
+                          scale=1.0):
         """
         Creates a spectrogram of the given instrument and channel.
 
@@ -184,6 +211,8 @@ class PlasmaDataHandler:
             Size of the windows used to compute the FFT.
         make_plot : bool
             If True, produces a matplotlib plot, else returns the spectrogram.
+        scale : float
+            Change the scale of the colors from full (1.0), to some fraction.
 
         Returns
         -------
@@ -214,7 +243,10 @@ class PlasmaDataHandler:
             #hsize = wsize * window_size / (2 * n_windows)
             hsize = 4
             fig, ax = plt.subplots(figsize=(wsize, hsize))
-            ax.imshow(out, origin='lower', aspect='auto')
+
+            vmin, vmax = self.scaleMinMax(np.min(out), np.max(out), scale)
+            ax.imshow(out, origin='lower', aspect='auto', vmin=vmin, vmax=vmax)
+
             ax.set_xticks(np.linspace(0, n_windows, 5, endpoint=True))
             ax.set_xticklabels(np.linspace(0, n_windows * window_size, 5,
                                            endpoint=True) * ts / 1000.0)
@@ -224,6 +256,7 @@ class PlasmaDataHandler:
                                       5,
                                       endpoint=True)
                           )
+
             max_idx = (window_size - 1) // 2
             max_freq = np.fft.fftfreq(window_size, d=ts * 1e-3)[max_idx]  # kHz
             yticks = ['{:.1f}'.format(tick) for tick in

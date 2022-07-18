@@ -227,7 +227,14 @@ class APSDataHandler:
         """
         self.filename = filename
 
-    def creatDataFrame(self, filters=None):
+    def __enter__(self):
+        self._hdf = h5py.File(self.filename, 'r')
+        return self._hdf
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self._hdf.close()
+
+    def createDataFrame(self, filters=None):
         """
         Uses filters to select data and puts everything into a pandas
         dataframe.
